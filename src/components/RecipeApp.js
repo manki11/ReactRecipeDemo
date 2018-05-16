@@ -9,9 +9,6 @@ import RecipeInput from "./RecipeInput";
 
 class RecipeApp extends Component {
 
-    isHost= false;
-    presence= null;
-
     constructor(props){
         super(props);
         this.state={
@@ -41,16 +38,21 @@ class RecipeApp extends Component {
             nextRecipeId:3,
             isForm: false
         };
+        this.isHost= false;
+        this.presence= null;
 
         this.handleSave= this.handleSave.bind(this);
         this.onDelete= this.onDelete.bind(this);
+        this.updateAll= this.updateAll.bind(this);
+        this.onNetworkDataReceived= this.onNetworkDataReceived.bind(this);
+        this.onNetworkUserChanged= this.onNetworkUserChanged.bind(this);
+
     }
 
     componentDidMount(){
         activity.setup();
 
         let currentenv;
-        let isHost = false;
         let temp= this;
         env.getEnvironment(function(err, environment) {
             currentenv = environment;
@@ -94,34 +96,46 @@ class RecipeApp extends Component {
                 }
                 network.createSharedActivity('org.sugarlabs.Demo', function(groupId) {
                     console.log("Activity shared");
-                    isHost= true;
+                    temp.isHost= true;
+                    console.log("after sharing:"+ temp.isHost);
                 });
                 network.onDataReceived(temp.onNetworkDataReceived);
                 network.onSharedActivityUserChanged(temp.onNetworkUserChanged);
             });
         });
-
-        this.isHost= isHost;
     }
 
-    onNetworkDataReceived= function (msg) {
+    onNetworkDataReceived(msg) {
         if (this.presence.getUserInfo().networkId === msg.user.networkId) {
             return;
         }
         switch (msg.content.action) {
             case 'init':
-                console.log("init data wtf");
+                console.log("initial message");
+                console.log(msg.content.data);
+                this.setState(msg.content.data);
                 break;
             case 'update':
-                console.log("update data wtf");
+                console.log("update message");
+                console.log(msg.content.data);
+                this.setState(msg.content.data);
                 break;
         }
     };
 
-    onNetworkUserChanged=(msg)=>{
+    onNetworkUserChanged(msg){
         if (this.isHost) {
-                console.log("i am host");
-            }
+            console.log("sending state");
+            let presence= this.presence;
+            let state= this.state;
+            presence.sendMessage(presence.getSharedInfo().id, {
+                user: presence.getUserInfo(),
+                content: {
+                    action: 'init',
+                    data: state
+                }
+            });
+        }
         console.log("User "+msg.user.name+" "+(msg.move === 1 ? "join": "leave"));
     };
 
@@ -133,12 +147,39 @@ class RecipeApp extends Component {
                 recipes: [...this.state.recipes, newRecipe],
                 isForm: false
             }
-        })
+        }, ()=> {
+            if(this.presence && this.isHost) {
+                console.log("sending msg to update");
+                this.updateAll()
+            }
+        });
     }
 
     onDelete(id){
         const recipes= this.state.recipes.filter(r => r.id!== id);
-        this.setState({recipes});
+        this.setState({recipes},()=> {
+            if(this.presence && this.isHost) {
+                console.log("sending msg to update");
+                this.updateAll()
+            }
+        });
+        
+        console.log(this.presence===null);
+        console.log(this.isHost);
+
+    }
+
+    updateAll(){
+        console.log("sending msg to update");
+        let presence= this.presence;
+        let state= this.state;
+        presence.sendMessage(presence.getSharedInfo().id, {
+            user: presence.getUserInfo(),
+            content: {
+                action: 'update',
+                data: state
+            }
+        });
     }
 
     stopActivity(){
